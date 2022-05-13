@@ -85,6 +85,30 @@ public class PrecomputedOcean : MonoBehaviour
         }
     }
 
+    void OutputDataToDataArray(float t, int frameId, int meshSize, Vector3[,] displaceData, Vector3[,] normalData)
+    {
+        int meshSizePlus1 = meshSize + 1;
+        int vertexCount = meshSizePlus1 * meshSizePlus1;
+        Vector3[] tempVertices = new Vector3[vertexCount];
+        Vector3[] tempNormals = new Vector3[vertexCount];
+
+        EvaluateWavesFFT(t, meshSize, vertices, normals);
+
+        for (int i = 0; i < meshSize; i++)
+        {
+            for (int j = 0; j < meshSize; j++)
+            {
+                int idx = i * meshSizePlus1 + j;
+                Vector3 data = vertices[idx] - originPosition[idx];
+                Color displace = new Color(data.x, data.y, data.z, 0.0f);
+                displaceData[frameId, j + i * meshSize] = data;
+
+                Color normal = new Color(normals[idx].x, normals[idx].y, normals[idx].z, 0.0f);
+                normalData[frameId, j + i * meshSize] = normals[idx];
+            }
+        }
+    }
+
     void SaveToTga(Texture2D texture, string path)
     {
         var bytes = texture.EncodeToTGA();
@@ -100,7 +124,10 @@ public class PrecomputedOcean : MonoBehaviour
         
         Texture2D[] normalTextures = new Texture2D[dataSize];
         Texture2D[] displaceTextures = new Texture2D[dataSize];
-        //Texture2D[] textures = new Texture2D[dataSize];
+
+        Vector3[,] normalData = new Vector3[dataSize, meshSize * meshSize];
+        Vector3[,] displaceData = new Vector3[dataSize, meshSize * meshSize];
+
         for (int i = 0; i < normalTextures.Length; i++)
         {
             displaceTextures[i] = new Texture2D(meshSize, meshSize, TextureFormat.RGBAHalf, false);
@@ -480,6 +507,21 @@ public class PrecomputedOcean : MonoBehaviour
                     normals[index1 + Nplus1 * N].x = n.x;
                     normals[index1 + Nplus1 * N].y = n.y;
                     normals[index1 + Nplus1 * N].z = n.z;
+                }
+            }
+        }
+
+        void CalcFoamData(Vector3[,] displaceData, out Vector3[,] foamData)
+        {
+            foamData = new Vector3[displaceData.GetLength(0), displaceData.GetLength(1)];
+
+            for(int frameId = 0; frameId < displaceData.GetLength(0); frameId++)
+            {
+                for(int x = 0; x < meshSize; x++)
+                {
+                    for(int z = 0; z < meshSize; z++)
+                    {
+                    }
                 }
             }
         }
