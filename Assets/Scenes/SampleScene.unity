@@ -158,8 +158,8 @@ MonoBehaviour:
   waveAmp: 0.0004
   worldScale: 32
   repeatTime: 5
-  dataSize: 256
-  useBake: 1
+  dataSize: 1
+  techType: 2
 --- !u!4 &584010724
 Transform:
   m_ObjectHideFlags: 0
