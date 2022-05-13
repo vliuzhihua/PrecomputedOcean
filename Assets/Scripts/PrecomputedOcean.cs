@@ -1,4 +1,3 @@
-using PhillipsOcean;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -6,7 +5,14 @@ using System.IO;
 using System.Threading;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.UI;
 
+public enum TechType
+{
+    BruteForce,
+    FFT,
+    Baked
+};
 
 [CustomEditor(typeof(PrecomputedOcean))]
 public class PrecomputedOceanEditor : Editor 
@@ -40,19 +46,20 @@ public class PrecomputedOcean : MonoBehaviour
     public float repeatTime = 200.0f;
 
     public int dataSize = 128;
-    public bool useBake = false;
-
+    public TechType techType = TechType.BruteForce;
 
     Mesh mesh = null;
     Vector3[] vertices;
     Vector3[] originPosition;
     Vector3[] normals;
-    Vector2[,] heightBuffer;
-    Vector4[,] slopeBuffer, displacementBuffer;
+    Vector4[] heightBuffer;
+    Vector4[] slopeBuffer, displacementBuffer;
 
     GameObject gameObject;
 
     volatile bool done = true;
+    double lastUpdateTime = 0.0;
+    double fps = -1.0;
 
 
     void OutputDataToTexture(float t, int meshSize, Texture2D displaceTexture, Texture2D normalTexture)
@@ -99,8 +106,8 @@ public class PrecomputedOcean : MonoBehaviour
             displaceTextures[i] = new Texture2D(meshSize, meshSize, TextureFormat.RGBAHalf, false);
             normalTextures[i] = new Texture2D(meshSize, meshSize, TextureFormat.RGBAHalf, false);
             OutputDataToTexture(i * repeatTime / dataSize, meshSize, displaceTextures[i], normalTextures[i]);
-            SaveToTga(displaceTextures[i], "Assets/OutputData/displace_" + i + ".tga");
-            SaveToTga(normalTextures[i], "Assets/OutputData/normal_" + i + ".tga");
+            //SaveToTga(displaceTextures[i], "Assets/OutputData/displace_" + i + ".tga");
+            //SaveToTga(normalTextures[i], "Assets/OutputData/normal_" + i + ".tga");
         }
 
       
@@ -175,7 +182,8 @@ public class PrecomputedOcean : MonoBehaviour
 
         UpdateOceanParameter(); 
 
-        OutputData();
+        if(techType == TechType.Baked)
+            OutputData();
         
         //var array = AssetBundle.LoadFromFile("Assets/TextureArray.asset").LoadAsset<Texture2DArray>("Assets/TextureArray.asset");
         //var array = Resources.Load("Assets/TextureArray.asset") as Texture2DArray; 
@@ -193,9 +201,9 @@ public class PrecomputedOcean : MonoBehaviour
         spectrumConj = new Vector2[meshSizePlus1 * meshSizePlus1];
         dispersionTable = new float[meshSizePlus1 * meshSizePlus1];
 
-        heightBuffer = new Vector2[2, meshSize * meshSize];
-        slopeBuffer = new Vector4[2, meshSize * meshSize];
-        displacementBuffer = new Vector4[2, meshSize * meshSize];
+        heightBuffer = new Vector4[meshSize * meshSize];
+        slopeBuffer = new Vector4[meshSize * meshSize];
+        displacementBuffer = new Vector4[meshSize * meshSize];
 
         windDirection = new Vector2(windSpeed.x, windSpeed.y);
         windDirection.Normalize();
@@ -271,6 +279,18 @@ public class PrecomputedOcean : MonoBehaviour
         return r * Mathf.Sqrt(PhillipsSpectrum(n_prime, m_prime) / 2.0f);
     }
 
+    void OutputDebugInfo()
+    {
+
+        double elapsedTime = Time.realtimeSinceStartup - lastUpdateTime;
+        lastUpdateTime = Time.realtimeSinceStartup;
+        double thisFps = 1.0 / elapsedTime;
+        fps = fps * 0.5 + thisFps * 0.5;
+
+        if(Time.frameCount % 100 != 0)
+            return;
+        Debug.Log("fps is " +  fps);
+    }
 
     // Update is called once per frame
     void Update()
@@ -278,11 +298,12 @@ public class PrecomputedOcean : MonoBehaviour
         //If still running return.
         if (!done) return;
 
+        OutputDebugInfo();
 
         UpdateOceanParameter();
         //Set data generated form last calculations.
 
-        if (useBake)
+        if (techType == TechType.Baked)
         {
             mesh.vertices = originPosition;
             material.SetInt("UseBake", 1);
@@ -342,13 +363,21 @@ public class PrecomputedOcean : MonoBehaviour
     void EvaluateWavesFFT(float t, int meshSize, Vector3[] vertices, Vector3[] normals)
     {
 
-        FourierCPU fourier = new FourierCPU(meshSize);
+        Solver solver;
+        if(techType == TechType.BruteForce)
+            solver = new FourierBruteForce(meshSize);
+        else
+            solver = new FourierFFT(meshSize);
 
         int N = meshSize;
         int Nplus1 = N + 1;
 
         float kx, kz, len, lambda = -1.0f;
         int index, index1;
+
+        Vector4[] inputHeightBuffer = new Vector4[heightBuffer.Length];
+        Vector4[] inputSlopeBuffer = new Vector4[slopeBuffer.Length];
+        Vector4[] inputDisplacementBuffer = new Vector4[displacementBuffer.Length];
 
         for (int m_prime = 0; m_prime < N; m_prime++)
         {
@@ -362,36 +391,36 @@ public class PrecomputedOcean : MonoBehaviour
 
                 Vector2 c = InitSpectrum(t, n_prime, m_prime);
 
-                heightBuffer[1, index].x = c.x;
-                heightBuffer[1, index].y = c.y;
+                inputHeightBuffer[index].x = c.x;
+                inputHeightBuffer[index].y = c.y;
 
-                slopeBuffer[1, index].x = -c.y * kx;
-                slopeBuffer[1, index].y = c.x * kx;
+                inputSlopeBuffer[index].x = -c.y * kx;
+                inputSlopeBuffer[index].y = c.x * kx;
 
-                slopeBuffer[1, index].z = -c.y * kz;
-                slopeBuffer[1, index].w = c.x * kz;
+                inputSlopeBuffer[index].z = -c.y * kz;
+                inputSlopeBuffer[index].w = c.x * kz;
 
                 if (len < 0.000001f)
                 {
-                    displacementBuffer[1, index].x = 0.0f;
-                    displacementBuffer[1, index].y = 0.0f;
-                    displacementBuffer[1, index].z = 0.0f;
-                    displacementBuffer[1, index].w = 0.0f;
+                    inputDisplacementBuffer[index].x = 0.0f;
+                    inputDisplacementBuffer[index].y = 0.0f;
+                    inputDisplacementBuffer[index].z = 0.0f;
+                    inputDisplacementBuffer[index].w = 0.0f;
                 }
                 else
                 {
-                    displacementBuffer[1, index].x = -c.y * -(kx / len);
-                    displacementBuffer[1, index].y = c.x * -(kx / len);
-                    displacementBuffer[1, index].z = -c.y * -(kz / len);
-                    displacementBuffer[1, index].w = c.x * -(kz / len);
+                    inputDisplacementBuffer[index].x = -c.y * -(kx / len);
+                    inputDisplacementBuffer[index].y = c.x * -(kx / len);
+                    inputDisplacementBuffer[index].z = -c.y * -(kz / len);
+                    inputDisplacementBuffer[index].w = c.x * -(kz / len);
                 }
             }
         }
 
-        fourier.PeformFFT(0, heightBuffer, slopeBuffer, displacementBuffer);
+        solver.Peform(inputHeightBuffer, ref heightBuffer);
+        solver.Peform(inputSlopeBuffer, ref slopeBuffer);
+        solver.Peform(inputDisplacementBuffer, ref displacementBuffer);
 
-        int sign;
-        float[] signs = new float[] { 1.0f, -1.0f };
         Vector3 n;
 
         for (int m_prime = 0; m_prime < N; m_prime++)
@@ -401,19 +430,17 @@ public class PrecomputedOcean : MonoBehaviour
                 index = m_prime * N + n_prime;          // index into buffers
                 index1 = m_prime * Nplus1 + n_prime;    // index into vertices
 
-                sign = (int)signs[(n_prime + m_prime) & 1];
-
                 // height
-                vertices[index1].y = heightBuffer[1, index].x * sign;
-                if(heightBuffer[1, index].x * sign > 1.0)
+                vertices[index1].y = heightBuffer[index].x;
+                if(heightBuffer[index].x > 1.0)
                     vertices[index1].y *= 1.0f;
 
                 // displacement
-                vertices[index1].x = originPosition[index1].x + displacementBuffer[1, index].x * lambda * sign;
-                vertices[index1].z = originPosition[index1].z + displacementBuffer[1, index].z * lambda * sign;
+                vertices[index1].x = originPosition[index1].x + displacementBuffer[index].x * lambda;
+                vertices[index1].z = originPosition[index1].z + displacementBuffer[index].z * lambda;
 
                 // normal
-                n = new Vector3(-slopeBuffer[1, index].x * sign, 1.0f, -slopeBuffer[1, index].z * sign);
+                n = new Vector3(-slopeBuffer[index].x, 1.0f, -slopeBuffer[index].z);
                 n.Normalize();
 
                 normals[index1].x = n.x;
@@ -423,10 +450,10 @@ public class PrecomputedOcean : MonoBehaviour
                 // for tiling
                 if (n_prime == 0 && m_prime == 0)
                 {
-                    vertices[index1 + N + Nplus1 * N].y = heightBuffer[1, index].x * sign;
+                    vertices[index1 + N + Nplus1 * N].y = heightBuffer[index].x;
 
-                    vertices[index1 + N + Nplus1 * N].x = originPosition[index1 + N + Nplus1 * N].x + displacementBuffer[1, index].x * lambda * sign;
-                    vertices[index1 + N + Nplus1 * N].z = originPosition[index1 + N + Nplus1 * N].z + displacementBuffer[1, index].z * lambda * sign;
+                    vertices[index1 + N + Nplus1 * N].x = originPosition[index1 + N + Nplus1 * N].x + displacementBuffer[index].x * lambda;
+                    vertices[index1 + N + Nplus1 * N].z = originPosition[index1 + N + Nplus1 * N].z + displacementBuffer[index].z * lambda;
 
                     normals[index1 + N + Nplus1 * N].x = n.x;
                     normals[index1 + N + Nplus1 * N].y = n.y;
@@ -434,10 +461,10 @@ public class PrecomputedOcean : MonoBehaviour
                 }
                 if (n_prime == 0)
                 {
-                    vertices[index1 + N].y = heightBuffer[1, index].x * sign;
+                    vertices[index1 + N].y = heightBuffer[index].x;
 
-                    vertices[index1 + N].x = originPosition[index1 + N].x + displacementBuffer[1, index].x * lambda * sign;
-                    vertices[index1 + N].z = originPosition[index1 + N].z + displacementBuffer[1, index].z * lambda * sign;
+                    vertices[index1 + N].x = originPosition[index1 + N].x + displacementBuffer[index].x * lambda;
+                    vertices[index1 + N].z = originPosition[index1 + N].z + displacementBuffer[index].z * lambda;
 
                     normals[index1 + N].x = n.x;
                     normals[index1 + N].y = n.y;
@@ -445,10 +472,10 @@ public class PrecomputedOcean : MonoBehaviour
                 }
                 if (m_prime == 0)
                 {
-                    vertices[index1 + Nplus1 * N].y = heightBuffer[1, index].x * sign;
+                    vertices[index1 + Nplus1 * N].y = heightBuffer[index].x;
 
-                    vertices[index1 + Nplus1 * N].x = originPosition[index1 + Nplus1 * N].x + displacementBuffer[1, index].x * lambda * sign;
-                    vertices[index1 + Nplus1 * N].z = originPosition[index1 + Nplus1 * N].z + displacementBuffer[1, index].z * lambda * sign;
+                    vertices[index1 + Nplus1 * N].x = originPosition[index1 + Nplus1 * N].x + displacementBuffer[index].x * lambda;
+                    vertices[index1 + Nplus1 * N].z = originPosition[index1 + Nplus1 * N].z + displacementBuffer[index].z * lambda;
 
                     normals[index1 + Nplus1 * N].x = n.x;
                     normals[index1 + Nplus1 * N].y = n.y;

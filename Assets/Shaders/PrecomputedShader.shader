@@ -21,6 +21,7 @@ Shader "Custom/PrecomputedOceanShader"
 			#include "UnityImageBasedLighting.cginc"
 
 			UNITY_DECLARE_TEX2DARRAY(DisplaceArray);
+			float4 DisplaceArray_TexelSize;
 			UNITY_DECLARE_TEX2DARRAY(NormalArray);
 
             struct appdata
@@ -53,15 +54,17 @@ Shader "Custom/PrecomputedOceanShader"
 				float idx0 = floor(t * LoopTime);
 				float idx1 = (idx0 + 1) % LoopTime;
 				float lerpFactor = frac(t * LoopTime);
+				
+				float2 uvOffset = DisplaceArray_TexelSize.xy * 0.5;
 
-				float4 disp0  = UNITY_SAMPLE_TEX2DARRAY_LOD(DisplaceArray, float3(v.uv.xy, idx0), 0);
-				float4 disp1 = UNITY_SAMPLE_TEX2DARRAY_LOD(DisplaceArray, float3(v.uv.xy, idx1), 0);
+				float4 disp0  = UNITY_SAMPLE_TEX2DARRAY_LOD(DisplaceArray, float3(v.uv.xy + uvOffset, idx0), 0);
+				float4 disp1 = UNITY_SAMPLE_TEX2DARRAY_LOD(DisplaceArray, float3(v.uv.xy + uvOffset, idx1), 0);
 				float4 displace = lerp(disp0, disp1, lerpFactor);
 				float4 vertex = v.vertex + displace;
 				vertex.a = 1.0;
 
-				float4 normal0  = UNITY_SAMPLE_TEX2DARRAY_LOD(NormalArray, float3(v.uv.xy, idx0), 0);
-				float4 normal1 = UNITY_SAMPLE_TEX2DARRAY_LOD(NormalArray, float3(v.uv.xy, idx1), 0);
+				float4 normal0  = UNITY_SAMPLE_TEX2DARRAY_LOD(NormalArray, float3(v.uv.xy + uvOffset, idx0), 0);
+				float4 normal1 = UNITY_SAMPLE_TEX2DARRAY_LOD(NormalArray, float3(v.uv.xy + uvOffset, idx1), 0);
 				float4 normal = lerp(normal0, normal1, lerpFactor);
 
 				if (UseBake == 0)
