@@ -34,19 +34,12 @@ public class PrecomputedOcean : MonoBehaviour
     public int meshSize = 32;
     public Material material;
 
-    const float GRAVITY = 9.81f;
-    public Vector2 windSpeed = new Vector2(32.0f, 32.0f);
-    Vector2 windDirection;
-    public float waveAmp = 0.0002f;
-
-    Vector2[] spectrum, spectrumConj;
-    float[] dispersionTable;
-
     public float worldScale = 64;
-    public float repeatTime = 200.0f;
-
     public int dataSize = 128;
+
     public TechType techType = TechType.BruteForce;
+
+    public PhillipsWaveSpectrum spectrum;
 
     Mesh mesh = null;
     Vector3[] vertices;
@@ -54,6 +47,8 @@ public class PrecomputedOcean : MonoBehaviour
     Vector3[] normals;
     Vector4[] heightBuffer;
     Vector4[] slopeBuffer, displacementBuffer;
+
+    Texture2DArray displaceArray, normalArray, mixArray;
 
     GameObject gameObject;
 
@@ -77,6 +72,12 @@ public class PrecomputedOcean : MonoBehaviour
             {
                 int idx = i * meshSizePlus1 + j;
                 Vector3 data = vertices[idx] - originPosition[idx];
+                
+                //data = data / 2.0f;
+                //data.x = Math.Min(Math.Max(-1.0f, data.x), 1.0f);
+                //data.y = Math.Min(Math.Max(-1.0f, data.y), 1.0f);
+                //data.z = Math.Min(Math.Max(-1.0f, data.z), 1.0f);
+
                 Color displace = new Color(data.x, data.y, data.z, 0.0f);
                 displaceTexture.SetPixel(j, i, displace);
                 Color normal = new Color(normals[idx].x, normals[idx].y, normals[idx].z, 0.0f);
@@ -94,6 +95,8 @@ public class PrecomputedOcean : MonoBehaviour
 
         EvaluateWavesFFT(t, meshSize, vertices, normals);
 
+        float maxAbsDisplaceValue = 0.0f;
+
         for (int i = 0; i < meshSize; i++)
         {
             for (int j = 0; j < meshSize; j++)
@@ -103,8 +106,32 @@ public class PrecomputedOcean : MonoBehaviour
                 Color displace = new Color(data.x, data.y, data.z, 0.0f);
                 displaceData[frameId, j + i * meshSize] = data;
 
+                float m = Math.Max(Math.Max(Math.Abs(data.x), Math.Abs(data.y)), Math.Abs(data.z));
+                maxAbsDisplaceValue = Math.Max(maxAbsDisplaceValue, m);
+                
+
                 Color normal = new Color(normals[idx].x, normals[idx].y, normals[idx].z, 0.0f);
                 normalData[frameId, j + i * meshSize] = normals[idx];
+            }
+        }
+
+        Debug.Log("maxAbsDisplaceValue: " + maxAbsDisplaceValue);
+    }
+
+    void DataToTexture(int meshSize, Vector3[,] datas, Texture2D[] textures)
+    {
+        for(int frame = 0 ; frame < textures.Length; frame++)
+        {
+            textures[frame] = new Texture2D(meshSize, meshSize, TextureFormat.RGBA32, false);
+            for (int i = 0; i < meshSize; i++)
+            {
+                for (int j = 0; j < meshSize; j++)
+                {
+                    int idx = i * meshSize + j;
+                    Vector3 data = datas[frame, idx];
+                    Color value = new Color(data.x, data.y, data.z, 0.0f);
+                    textures[frame].SetPixel(j, i, value);
+                }
             }
         }
     }
@@ -116,6 +143,122 @@ public class PrecomputedOcean : MonoBehaviour
         var binary = new BinaryWriter(file);
         binary.Write(bytes);
         file.Close();
+    }
+
+    void SaveToExr(Texture2D texture, string path)
+    {
+        var bytes = texture.EncodeToEXR();
+        var file = File.Open(path, FileMode.Create);
+        var binary = new BinaryWriter(file);
+        binary.Write(bytes);
+        file.Close();
+    }
+
+    void CalcFoamData(float cellWorldSize, Vector3[,] displaceData, out Vector3[,] foamData)
+    {
+        foamData = new Vector3[displaceData.GetLength(0), displaceData.GetLength(1)];
+        
+        Vector3[,] tempFoamData = new Vector3[displaceData.GetLength(0), displaceData.GetLength(1)];
+        for (int frameId = 0; frameId < displaceData.GetLength(0); frameId++)
+        {
+            for (int y = 0; y < meshSize; y++)
+            {
+                for (int x = 0; x < meshSize; x++)
+                {
+                    int idx00 = x + y * meshSize;
+                    int idx10 = (x + 1) % meshSize + y * meshSize;
+                    int idx01 = x + ((y + 1) % meshSize) * meshSize;
+                    Vector2 disp00 = new Vector2(displaceData[frameId, idx00].x, displaceData[frameId, idx00].z);
+                    Vector2 disp10 = new Vector2(displaceData[frameId, idx10].x, displaceData[frameId, idx10].z) + new Vector2(cellWorldSize, 0.0f);
+                    Vector2 disp01 = new Vector2(displaceData[frameId, idx01].x, displaceData[frameId, idx01].z) + new Vector2(0.0f, cellWorldSize);
+                    Vector2 dx = disp10 - disp00;
+                    Vector2 dz = disp01 - disp00;
+                    float det = (dx.x * dz.y - dx.y * dz.x) / (cellWorldSize * cellWorldSize);
+
+                    float foamValue = Math.Max(-det + 1.0f, 0.0f);
+
+                    //foamValue = 1.0f;
+
+                    tempFoamData[frameId, idx00] = new Vector3(foamValue, foamValue, foamValue);
+                }
+            }
+        }
+
+        //direction blend
+        //for (int frameId = 0; frameId < displaceData.GetLength(0); frameId++)
+        //{
+        //    for (int y = 0; y < meshSize; y++)
+        //    {
+        //        for (int x = 0; x < meshSize; x++)
+        //        {
+        //            int idx = x + y * meshSize;
+        //            int preFrameId = (frameId - 1 + displaceData.GetLength(0)) % displaceData.GetLength(0);
+
+        //            float lerpFactor = 0.7f;
+        //            foamData[frameId, idx] = foamData[preFrameId, idx] * 0.8f + foamData[frameId, idx] * lerpFactor;
+        //        }
+        //    }
+        //}
+        Func<Vector3[,], Vector3[,], int> LerpDataFunc = (v1, v2) =>
+        {
+            //spectrum.repeatTime
+            int framePerSecond = (int)(dataSize / spectrum.repeatTime);
+            
+            float timePerFrame = spectrum.repeatTime / dataSize;
+
+            //lerp between frame
+            for (int frameId = 0; frameId < displaceData.GetLength(0); frameId++)
+            {
+                for (int y = 0; y < meshSize; y++)
+                {
+                    for (int x = 0; x < meshSize; x++)
+                    {
+                
+                        int idx = x + y * meshSize;
+                        v1[frameId, idx] = new Vector3(0.0f, 0.0f, 0.0f);
+                        int peekFrameCount = 20;
+                        float weightSum = 0.0f;
+                        for(int i = 0; i < dataSize - 1; i++)
+                        {
+                            int preFrameId = (frameId - i + displaceData.GetLength(0)) % displaceData.GetLength(0);
+
+                            float weight = (float)Math.Pow(0.01, i * timePerFrame);
+                            v1[frameId, idx] += v2[preFrameId, idx] * weight;// * (1.0f - i / 6.0f);//Math.Pow()
+                            weightSum += weight;
+                        }
+
+                        v1[frameId, idx] /= weightSum;
+
+                    }
+                }
+            }
+            return 0; 
+        };
+
+        //lerp between frame
+        LerpDataFunc(foamData, tempFoamData);
+        //LerpDataFunc(tempFoamData, foamData);
+        //LerpDataFunc(foamData, tempFoamData);
+        
+    }
+
+    void WriteTextureArrayToFile(ref BinaryWriter writer, Vector3[,] texArray)
+    {
+        for(int i = 0; i < texArray.Length; i++)
+        {
+            //writer.Write(texArray[i].GetPixels32(0));
+            //writer.Write(texArray[i].GetPixelData<Byte>(0));
+        }
+    }
+
+    void SaveAllDataToFile(string filePath, Vector3[,] displaceArray, Vector3[,] normalArray, Vector3[,] foamArray)
+    {
+        var file = File.Open(filePath, FileMode.Create);
+        var binary = new BinaryWriter(file);
+        int[] da = new int[] {displaceArray.GetLength(0)};
+        binary.Write(displaceArray.Length);
+        //for()
+        //Buffer.BlockCopy()
     }
 
     public void OutputData()
@@ -132,13 +275,15 @@ public class PrecomputedOcean : MonoBehaviour
         {
             displaceTextures[i] = new Texture2D(meshSize, meshSize, TextureFormat.RGBAHalf, false);
             normalTextures[i] = new Texture2D(meshSize, meshSize, TextureFormat.RGBAHalf, false);
-            OutputDataToTexture(i * repeatTime / dataSize, meshSize, displaceTextures[i], normalTextures[i]);
-            //SaveToTga(displaceTextures[i], "Assets/OutputData/displace_" + i + ".tga");
-            //SaveToTga(normalTextures[i], "Assets/OutputData/normal_" + i + ".tga");
+            OutputDataToTexture(i * spectrum.repeatTime / dataSize, meshSize, displaceTextures[i], normalTextures[i]);
+            OutputDataToDataArray(i * spectrum.repeatTime / dataSize, i, meshSize, displaceData, normalData);
+            SaveToExr(displaceTextures[i], "G://OutputData/displace_" + i + ".exr");
+            SaveToTga(normalTextures[i], "G://OutputData//normal_" + i + ".tga");
         }
 
-      
-        Texture2DArray displaceArray = new Texture2DArray(normalTextures[0].width, normalTextures[0].height, normalTextures.Length, normalTextures[0].format, false);
+
+        //displace array      
+        displaceArray = new Texture2DArray(normalTextures[0].width, normalTextures[0].height, normalTextures.Length, normalTextures[0].format, false);
         displaceArray.wrapMode = TextureWrapMode.Repeat;
         displaceArray.filterMode = FilterMode.Bilinear;
         for (int i = 0; i < displaceTextures.Length; i++)
@@ -147,7 +292,8 @@ public class PrecomputedOcean : MonoBehaviour
         displaceArray.Apply(true);
         material.SetTexture("DisplaceArray", displaceArray);
 
-        Texture2DArray normalArray = new Texture2DArray(normalTextures[0].width, normalTextures[0].height, normalTextures.Length, normalTextures[0].format, false);
+        //normal array
+        normalArray = new Texture2DArray(normalTextures[0].width, normalTextures[0].height, normalTextures.Length, normalTextures[0].format, false);
         normalArray.wrapMode = TextureWrapMode.Repeat;
         normalArray.filterMode = FilterMode.Bilinear;
         for (int i = 0; i < normalTextures.Length; i++)
@@ -155,6 +301,29 @@ public class PrecomputedOcean : MonoBehaviour
 
         normalArray.Apply(true);
         material.SetTexture("NormalArray", normalArray);
+
+        //foam array
+        Vector3[,] foamData = new Vector3[dataSize, meshSize * meshSize];
+        Texture2D[] mixTextures = new Texture2D[dataSize];
+        CalcFoamData(worldScale / meshSize, displaceData, out foamData);
+        DataToTexture(meshSize, foamData, mixTextures);
+
+        for (int i = 0; i < mixTextures.Length; i++)
+        {
+            SaveToTga(mixTextures[i], "G://OutputData/mix_" + i + ".tga");
+        }
+
+        mixArray = new Texture2DArray(mixTextures[0].width, mixTextures[0].height, mixTextures.Length, mixTextures[0].format, false);
+        mixArray.wrapMode = TextureWrapMode.Repeat;
+        mixArray.filterMode = FilterMode.Bilinear;
+        for (int i = 0; i < mixTextures.Length; i++)
+            mixArray.SetPixels(mixTextures[i].GetPixels(), i);
+
+        mixArray.Apply(true);
+        material.SetTexture("MixArray", mixArray);
+
+
+
     }
 
     // Start is called before the first frame update
@@ -205,8 +374,9 @@ public class PrecomputedOcean : MonoBehaviour
         gameObject.GetComponent<MeshFilter>().mesh = mesh;
         gameObject.GetComponent<MeshRenderer>().material = material;
 
-        //init ocean parameter
 
+
+        //init ocean parameter
         UpdateOceanParameter(); 
 
         if(techType == TechType.Baked)
@@ -221,94 +391,25 @@ public class PrecomputedOcean : MonoBehaviour
     void UpdateOceanParameter()
     {
         UnityEngine.Random.InitState(0);
-
-        int meshSizePlus1 = meshSize + 1;
-
-        spectrum = new Vector2[meshSizePlus1 * meshSizePlus1];
-        spectrumConj = new Vector2[meshSizePlus1 * meshSizePlus1];
-        dispersionTable = new float[meshSizePlus1 * meshSizePlus1];
+        spectrum.Init(meshSize, worldScale);
 
         heightBuffer = new Vector4[meshSize * meshSize];
         slopeBuffer = new Vector4[meshSize * meshSize];
         displacementBuffer = new Vector4[meshSize * meshSize];
 
-        windDirection = new Vector2(windSpeed.x, windSpeed.y);
-        windDirection.Normalize();
-
-        for (int i = 0; i < meshSizePlus1; i++)
-        {
-            for (int j = 0; j < meshSizePlus1; j++)
-            {
-                int idx = i * meshSizePlus1 + j;
-                dispersionTable[idx] = Dispersion(j, i);
-                spectrum[idx] = GetSpectrum(j, i);
-                spectrumConj[idx] = GetSpectrum(-j, -i);
-                spectrumConj[idx].y *= -1.0f;
-            }
-        }
-        
-        material.SetInt("RepeatTime", (int)repeatTime);
+        material.SetInt("RepeatTime", (int)spectrum.repeatTime);
         material.SetInt("LoopTime", (int)dataSize);
+
+        if(displaceArray)
+            material.SetTexture("DisplaceArray", displaceArray);
+        if(normalArray)
+            material.SetTexture("NormalArray", normalArray);
+        if(mixArray)
+            material.SetTexture("MixArray", mixArray);
     }
-
-    float Dispersion(int n_prime, int m_prime)
-    {
-        float w_0 = 2.0f * Mathf.PI / repeatTime;
-        float kx = Mathf.PI * (2 * n_prime - meshSize) / worldScale;
-        float kz = Mathf.PI * (2 * m_prime - meshSize) / worldScale;
-        return Mathf.Floor(Mathf.Sqrt(GRAVITY * Mathf.Sqrt(kx * kx + kz * kz)) / w_0) * w_0;
-    }
-
-    Vector2 GaussianRandomVariable()
-    {
-        float x1, x2, w;
-        do
-        {
-            x1 = 2.0f * UnityEngine.Random.value - 1.0f;
-            x2 = 2.0f * UnityEngine.Random.value - 1.0f;
-            w = x1 * x1 + x2 * x2;
-        }
-        while (w >= 1.0f);
-
-        w = Mathf.Sqrt((-2.0f * Mathf.Log(w)) / w);
-        return new Vector2(x1 * w, x2 * w);
-    }
-
-    float PhillipsSpectrum(int n_prime, int m_prime)
-    {
-        Vector2 k = new Vector2(Mathf.PI * (2 * n_prime - meshSize) / worldScale, Mathf.PI * (2 * m_prime - meshSize) / worldScale);
-        float k_length = k.magnitude;
-        if (k_length < 0.000001f) return 0.0f;
-
-        float k_length2 = k_length * k_length;
-        float k_length4 = k_length2 * k_length2;
-
-        k.Normalize();
-
-        float k_dot_w = Vector2.Dot(k, windDirection);
-        float k_dot_w2 = k_dot_w * k_dot_w * k_dot_w * k_dot_w * k_dot_w * k_dot_w;
-
-        float w_length = windSpeed.magnitude;
-        float L = w_length * w_length / GRAVITY;
-        float L2 = L * L;
-
-        float damping = 0.001f;
-        float l2 = L2 * damping * damping;
-
-        //return waveAmp * Mathf.Exp(-1.0f / (k_length2 * L2)) / k_length4 * k_dot_w2 * Mathf.Exp(-k_length2 * l2);
-        return waveAmp * Mathf.Exp(-1.0f / (k_length2 * L2)) / k_length4 * Mathf.Exp(-k_length2 * l2);
-    }
-
-
-    Vector2 GetSpectrum(int n_prime, int m_prime)
-    {
-        Vector2 r = GaussianRandomVariable();
-        return r * Mathf.Sqrt(PhillipsSpectrum(n_prime, m_prime) / 2.0f);
-    }
-
+    
     void OutputDebugInfo()
     {
-
         double elapsedTime = Time.realtimeSinceStartup - lastUpdateTime;
         lastUpdateTime = Time.realtimeSinceStartup;
         double thisFps = 1.0 / elapsedTime;
@@ -356,33 +457,11 @@ public class PrecomputedOcean : MonoBehaviour
 
     void RunThreaded(object o)
     {
-
         Nullable<float> time = o as Nullable<float>;
-
         EvaluateWavesFFT(time.Value, meshSize, vertices, normals);
-
         done = true;
-
     }
 
-    Vector2 InitSpectrum(float t, int n_prime, int m_prime)
-    {
-        int meshSizePlus1 = meshSize + 1;
-        int index = m_prime * meshSizePlus1 + n_prime;
-
-        float omegat = dispersionTable[index] * t;
-
-        float cos = Mathf.Cos(omegat);
-        float sin = Mathf.Sin(omegat);
-
-        float c0a = spectrum[index].x * cos - spectrum[index].y * sin;
-        float c0b = spectrum[index].x * sin + spectrum[index].y * cos;
-
-        float c1a = spectrumConj[index].x * cos - spectrumConj[index].y * -sin;
-        float c1b = spectrumConj[index].x * -sin + spectrumConj[index].y * cos;
-
-        return new Vector2(c0a + c1a, c0b + c1b);
-    }
 
     /// <summary>
     /// Evaluates the waves for time period t. Must be thread safe.
@@ -416,7 +495,7 @@ public class PrecomputedOcean : MonoBehaviour
                 len = Mathf.Sqrt(kx * kx + kz * kz);
                 index = m_prime * N + n_prime;
 
-                Vector2 c = InitSpectrum(t, n_prime, m_prime);
+                Vector2 c = spectrum.GetWaveFactor(t, n_prime, m_prime);
 
                 inputHeightBuffer[index].x = c.x;
                 inputHeightBuffer[index].y = c.y;
@@ -510,23 +589,6 @@ public class PrecomputedOcean : MonoBehaviour
                 }
             }
         }
-
-        void CalcFoamData(Vector3[,] displaceData, out Vector3[,] foamData)
-        {
-            foamData = new Vector3[displaceData.GetLength(0), displaceData.GetLength(1)];
-
-            for(int frameId = 0; frameId < displaceData.GetLength(0); frameId++)
-            {
-                for(int x = 0; x < meshSize; x++)
-                {
-                    for(int z = 0; z < meshSize; z++)
-                    {
-                    }
-                }
-            }
-        }
-
-
 
     }
 
