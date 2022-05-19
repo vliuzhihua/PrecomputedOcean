@@ -155,7 +155,7 @@ MonoBehaviour:
   meshSize: 128
   material: {fileID: 2100000, guid: b12bd06ff691cf742befac633580924d, type: 2}
   worldScale: 32
-  dataSize: 32
+  dataSize: 128
   techType: 2
   spectrum: {fileID: 11400000, guid: 54e1fe2d7dde8a848ad784d4fccaf6bd, type: 2}
 --- !u!4 &584010724

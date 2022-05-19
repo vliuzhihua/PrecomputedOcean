@@ -242,23 +242,36 @@ public class PrecomputedOcean : MonoBehaviour
         
     }
 
-    void WriteTextureArrayToFile(ref BinaryWriter writer, Vector3[,] texArray)
+    void WriteTextureArrayToFile(ref BinaryWriter writer, int size, Vector3[,] texArray)
     {
-        for(int i = 0; i < texArray.Length; i++)
+        for(int i = 0; i < texArray.GetLength(0); i++)
         {
-            //writer.Write(texArray[i].GetPixels32(0));
-            //writer.Write(texArray[i].GetPixelData<Byte>(0));
+            for(int y = 0; y < size; y++)
+            {
+                for(int x = 0; x < size; x++)
+                {
+                    int idx = x + y * size;
+                    writer.Write(texArray[i, idx].x);
+                    writer.Write(texArray[i, idx].y);
+                    writer.Write(texArray[i, idx].z);
+                    writer.Write(0.5f);
+                }
+            }
         }
     }
 
-    void SaveAllDataToFile(string filePath, Vector3[,] displaceArray, Vector3[,] normalArray, Vector3[,] foamArray)
+    void SaveAllDataToFile(string filePath, int size, Vector3[,] displaceArray, Vector3[,] normalArray, Vector3[,] foamArray)
     {
         var file = File.Open(filePath, FileMode.Create);
         var binary = new BinaryWriter(file);
-        int[] da = new int[] {displaceArray.GetLength(0)};
-        binary.Write(displaceArray.Length);
-        //for()
-        //Buffer.BlockCopy()
+
+        binary.Write(displaceArray.GetLength(0));
+        binary.Write(size);
+        
+        WriteTextureArrayToFile(ref binary, size, displaceArray);
+        WriteTextureArrayToFile(ref binary, size, normalArray);
+        WriteTextureArrayToFile(ref binary, size, foamArray);
+        file.Close();
     }
 
     public void OutputData()
@@ -303,10 +316,10 @@ public class PrecomputedOcean : MonoBehaviour
         material.SetTexture("NormalArray", normalArray);
 
         //foam array
-        Vector3[,] foamData = new Vector3[dataSize, meshSize * meshSize];
+        Vector3[,] mixData = new Vector3[dataSize, meshSize * meshSize];
         Texture2D[] mixTextures = new Texture2D[dataSize];
-        CalcFoamData(worldScale / meshSize, displaceData, out foamData);
-        DataToTexture(meshSize, foamData, mixTextures);
+        CalcFoamData(worldScale / meshSize, displaceData, out mixData);
+        DataToTexture(meshSize, mixData, mixTextures);
 
         for (int i = 0; i < mixTextures.Length; i++)
         {
@@ -323,6 +336,7 @@ public class PrecomputedOcean : MonoBehaviour
         material.SetTexture("MixArray", mixArray);
 
 
+        SaveAllDataToFile("G://result/PrecomputedOceanData.data", meshSize, displaceData, normalData, mixData);
 
     }
 
