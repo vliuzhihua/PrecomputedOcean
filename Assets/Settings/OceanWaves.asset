@@ -12,6 +12,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b0f6ee6f3cc342346b7f2e3308b1d3e4, type: 3}
   m_Name: OceanWaves
   m_EditorClassIdentifier: 
-  windSpeed: {x: 16, y: 16}
+  windSpeed: {x: 8, y: 0}
   waveAmp: 0.0004
   repeatTime: 10

@@ -158,6 +158,8 @@ MonoBehaviour:
   dataSize: 128
   techType: 2
   spectrum: {fileID: 11400000, guid: 54e1fe2d7dde8a848ad784d4fccaf6bd, type: 2}
+  multiMesh: 1
+  onlyYDisplace: 1
 --- !u!4 &584010724
 Transform:
   m_ObjectHideFlags: 0

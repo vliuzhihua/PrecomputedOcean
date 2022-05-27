@@ -23,8 +23,7 @@ public class PrecomputedOceanEditor : Editor
         PrecomputedOcean po = (PrecomputedOcean)target;
         if (GUILayout.Button("导出数据"))
         {
-            //po
-            po.OutputData();
+            po.OutputData(true);
         }
     }
 }
@@ -38,8 +37,10 @@ public class PrecomputedOcean : MonoBehaviour
     public int dataSize = 128;
 
     public TechType techType = TechType.BruteForce;
-
     public PhillipsWaveSpectrum spectrum;
+
+    public bool multiMesh = false;
+    public bool onlyYDisplace = true;
 
     Mesh mesh = null;
     Vector3[] vertices;
@@ -49,8 +50,6 @@ public class PrecomputedOcean : MonoBehaviour
     Vector4[] slopeBuffer, displacementBuffer;
 
     Texture2DArray displaceArray, normalArray, mixArray;
-
-    GameObject gameObject;
 
     volatile bool done = true;
     double lastUpdateTime = 0.0;
@@ -73,11 +72,6 @@ public class PrecomputedOcean : MonoBehaviour
                 int idx = i * meshSizePlus1 + j;
                 Vector3 data = vertices[idx] - originPosition[idx];
                 
-                //data = data / 2.0f;
-                //data.x = Math.Min(Math.Max(-1.0f, data.x), 1.0f);
-                //data.y = Math.Min(Math.Max(-1.0f, data.y), 1.0f);
-                //data.z = Math.Min(Math.Max(-1.0f, data.z), 1.0f);
-
                 Color displace = new Color(data.x, data.y, data.z, 0.0f);
                 displaceTexture.SetPixel(j, i, displace);
                 Color normal = new Color(normals[idx].x, normals[idx].y, normals[idx].z, 0.0f);
@@ -86,7 +80,70 @@ public class PrecomputedOcean : MonoBehaviour
         }
     }
 
-    void OutputDataToDataArray(float t, int frameId, int meshSize, Vector3[,] displaceData, Vector3[,] normalData)
+    void OutputDataToTexture(int frameId, int meshSize, Vector3[,] dataArray, Texture2D tex)
+    {
+        for (int i = 0; i < meshSize; i++)
+        {
+            for (int j = 0; j < meshSize; j++)
+            {
+                int idx = i * meshSize + j;
+                Vector3 data = dataArray[frameId, idx];
+
+                Color displace = new Color(data.x, data.y, data.z, 0.0f);
+                tex.SetPixel(j, i, displace);
+            }
+        }
+    }
+
+
+
+    Vector2 GetCorrectUV(int frameId, Vector3[,] displaceData, Vector2 worldPos, float worldScale, int meshSize)
+    {
+        Vector2 result = worldPos;
+        //return worldPos / worldScale;
+        //fpi
+        for(int i = 0; i < 6; i++)
+        {
+            Vector2 uv = result / worldScale;
+            Vector3 disp = BilinearWrapSample(frameId, displaceData, uv, meshSize);
+            result = worldPos - new Vector2(disp.x, disp.z);
+        } 
+
+        return result / worldScale;
+    }
+
+    Vector2 GetUVWithWrap(Vector2 uv, int meshSize)
+    {
+        while(uv.x < 0.0)
+            uv.x += meshSize;
+        while(uv.y < 0.0)
+            uv.y += meshSize;
+        return new Vector2(uv.x % meshSize, uv.y % meshSize);
+    }
+
+    Vector3 BilinearWrapSample(int frameId, Vector3[,] data, Vector2 uv, int meshSize)
+    {
+        Vector3 result;
+        uv *= meshSize;
+        uv = GetUVWithWrap(uv, meshSize);
+        int x = (int)Math.Floor(uv.x);
+        int y = (int)Math.Floor(uv.y);
+        float xlerp = uv.x - (float)x;
+        float ylerp = uv.y - (float)y;
+
+        Vector3 data00 = data[frameId, x + y * meshSize];
+        Vector3 data10 = data[frameId, (x + 1) % meshSize + y * meshSize];
+        Vector3 data01 = data[frameId, x + ((y + 1) % meshSize) * meshSize];
+        Vector3 data11 = data[frameId, ((x + 1) % meshSize) + ((y + 1) % meshSize) * meshSize];
+
+        Vector3 data0 = data00 * (1.0f - ylerp) + data01 * ylerp;
+        Vector3 data1 = data10 * (1.0f - ylerp) + data11 * ylerp;
+
+        result = data0 * (1.0f - xlerp) + data1 * xlerp;
+        return result;
+    }
+
+    void OutputDataToDataArray(float t, int frameId, int meshSize, ref Vector3[,] displaceData, ref Vector3[,] normalData)
     {
         int meshSizePlus1 = meshSize + 1;
         int vertexCount = meshSizePlus1 * meshSizePlus1;
@@ -103,19 +160,38 @@ public class PrecomputedOcean : MonoBehaviour
             {
                 int idx = i * meshSizePlus1 + j;
                 Vector3 data = vertices[idx] - originPosition[idx];
-                Color displace = new Color(data.x, data.y, data.z, 0.0f);
+
                 displaceData[frameId, j + i * meshSize] = data;
 
                 float m = Math.Max(Math.Max(Math.Abs(data.x), Math.Abs(data.y)), Math.Abs(data.z));
                 maxAbsDisplaceValue = Math.Max(maxAbsDisplaceValue, m);
-                
 
-                Color normal = new Color(normals[idx].x, normals[idx].y, normals[idx].z, 0.0f);
                 normalData[frameId, j + i * meshSize] = normals[idx];
             }
         }
-
         Debug.Log("maxAbsDisplaceValue: " + maxAbsDisplaceValue);
+
+
+        if (onlyYDisplace)
+        {
+            for (int i = 0; i < meshSize; i++)
+            {
+                for (int j = 0; j < meshSize; j++)
+                {
+                    float x = j * worldScale / meshSize;
+                    float y = i * worldScale / meshSize;
+                    Vector2 worldPos = new Vector2(x, y);
+                    Vector2 uv = GetCorrectUV(frameId, displaceData, worldPos, worldScale, meshSize);
+
+                    Vector3 dispData = BilinearWrapSample(frameId, displaceData, uv, meshSize);
+                    displaceData[frameId, j + i * meshSize] = new Vector3(0.0f, dispData.y, 0.0f);
+
+                    Vector3 norData = BilinearWrapSample(frameId, normalData, uv, meshSize);
+                    normalData[frameId, j + i * meshSize] = norData;
+                }
+            }
+        }
+
     }
 
     void DataToTexture(int meshSize, Vector3[,] datas, Texture2D[] textures)
@@ -218,11 +294,11 @@ public class PrecomputedOcean : MonoBehaviour
                         v1[frameId, idx] = new Vector3(0.0f, 0.0f, 0.0f);
                         int peekFrameCount = 20;
                         float weightSum = 0.0f;
-                        for(int i = 0; i < dataSize - 1; i++)
+                        for(int i = 0; i < dataSize; i++)
                         {
                             int preFrameId = (frameId - i + displaceData.GetLength(0)) % displaceData.GetLength(0);
 
-                            float weight = (float)Math.Pow(0.01, i * timePerFrame);
+                            float weight = (float)Math.Pow(0.02, i * timePerFrame);
                             v1[frameId, idx] += v2[preFrameId, idx] * weight;// * (1.0f - i / 6.0f);//Math.Pow()
                             weightSum += weight;
                         }
@@ -274,7 +350,7 @@ public class PrecomputedOcean : MonoBehaviour
         file.Close();
     }
 
-    public void OutputData()
+    public void OutputData(bool needSave = false)
     {
         //print("click output data");
         
@@ -288,10 +364,16 @@ public class PrecomputedOcean : MonoBehaviour
         {
             displaceTextures[i] = new Texture2D(meshSize, meshSize, TextureFormat.RGBAHalf, false);
             normalTextures[i] = new Texture2D(meshSize, meshSize, TextureFormat.RGBAHalf, false);
-            OutputDataToTexture(i * spectrum.repeatTime / dataSize, meshSize, displaceTextures[i], normalTextures[i]);
-            OutputDataToDataArray(i * spectrum.repeatTime / dataSize, i, meshSize, displaceData, normalData);
-            SaveToExr(displaceTextures[i], "G://OutputData/displace_" + i + ".exr");
-            SaveToTga(normalTextures[i], "G://OutputData//normal_" + i + ".tga");
+            OutputDataToDataArray(i * spectrum.repeatTime / dataSize, i, meshSize, ref displaceData, ref normalData);
+
+            OutputDataToTexture(i, meshSize, displaceData, displaceTextures[i]);
+            OutputDataToTexture(i, meshSize, normalData, normalTextures[i]);
+
+            if (needSave)
+            {
+                //SaveToExr(displaceTextures[i], "G://OutputData/displace_" + i + ".exr");
+                //SaveToTga(normalTextures[i], "G://OutputData//normal_" + i + ".tga");
+            }
         }
 
 
@@ -323,7 +405,8 @@ public class PrecomputedOcean : MonoBehaviour
 
         for (int i = 0; i < mixTextures.Length; i++)
         {
-            SaveToTga(mixTextures[i], "G://OutputData/mix_" + i + ".tga");
+            if(needSave)
+                SaveToTga(mixTextures[i], "G://OutputData/mix_" + i + ".tga");
         }
 
         mixArray = new Texture2DArray(mixTextures[0].width, mixTextures[0].height, mixTextures.Length, mixTextures[0].format, false);
@@ -335,8 +418,8 @@ public class PrecomputedOcean : MonoBehaviour
         mixArray.Apply(true);
         material.SetTexture("MixArray", mixArray);
 
-
-        SaveAllDataToFile("G://result/PrecomputedOceanData.data", meshSize, displaceData, normalData, mixData);
+        if(needSave)
+            SaveAllDataToFile("G://result/PrecomputedOceanData.data", meshSize, displaceData, normalData, mixData);
 
     }
 
@@ -383,12 +466,31 @@ public class PrecomputedOcean : MonoBehaviour
         mesh.vertices = originPosition;
         mesh.uv = uv;
         mesh.triangles = triangles;
-        gameObject = new GameObject("Mesh", typeof(MeshFilter), typeof(MeshRenderer));
-        gameObject.transform.localScale = new Vector3(1.0f, 1.0f, 1.0f);
-        gameObject.GetComponent<MeshFilter>().mesh = mesh;
-        gameObject.GetComponent<MeshRenderer>().material = material;
+        if (multiMesh)
+        {
+            int meshCount = 8;
+            for (int i = 0; i < meshCount; i++)
+            {
+                for (int j = 0; j < meshCount; j++)
+                {
+                    GameObject gameObject = new GameObject("Mesh", typeof(MeshFilter), typeof(MeshRenderer));
+                    gameObject.transform.localScale = new Vector3(1.0f, 1.0f, 1.0f);
+                    gameObject.GetComponent<MeshFilter>().mesh = mesh;
+                    gameObject.GetComponent<MeshRenderer>().material = material;
 
+                    gameObject.transform.position = new Vector3((j - meshCount / 2) * worldScale, 0.0f, (i - meshCount / 2) * worldScale);
 
+                }
+            }
+        }
+        else
+        {
+            GameObject gameObject = new GameObject("Mesh", typeof(MeshFilter), typeof(MeshRenderer));
+            gameObject.transform.localScale = new Vector3(1.0f, 1.0f, 1.0f);
+            gameObject.GetComponent<MeshFilter>().mesh = mesh;
+            gameObject.GetComponent<MeshRenderer>().material = material;
+        }
+       
 
         //init ocean parameter
         UpdateOceanParameter(); 
