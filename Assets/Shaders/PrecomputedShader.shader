@@ -48,14 +48,21 @@ Shader "Custom/PrecomputedOceanShader"
 			int LoopTime;
 			int UseBake;
 
+			void GetIndexAndFactor(out float idx0, out float idx1, out float lerpFactor) {
+				float t = frac(_Time.y / RepeatTime);
+				//t = 0;
+				idx0 = floor(t * LoopTime);
+				idx1 = (idx0 + 1) % LoopTime;
+				lerpFactor = frac(t * LoopTime);
+			}
+
             v2f vert (appdata v)
             {
                 v2f o;
-				
-				float t = frac(_Time.y / RepeatTime);
-				float idx0 = floor(t * LoopTime);
-				float idx1 = (idx0 + 1) % LoopTime;
-				float lerpFactor = frac(t * LoopTime);
+				float idx0;
+				float idx1;
+				float lerpFactor;
+				GetIndexAndFactor(idx0, idx1, lerpFactor);
 				
 				float2 uvOffset = DisplaceArray_TexelSize.xy * 0.5;
 
@@ -91,11 +98,11 @@ Shader "Custom/PrecomputedOceanShader"
                 // sample the texture
 				fixed4 col = 0.0f;// tex2D(_MainTex, i.uv);
 				float3 normal = i.normal;
-                // apply fog
-				float t = frac(_Time.y / RepeatTime);
-				float idx0 = floor(t * LoopTime);
-				float idx1 = (idx0 + 1) % LoopTime;
-				float lerpFactor = frac(t * LoopTime);
+
+				float idx0;
+				float idx1;
+				float lerpFactor;
+				GetIndexAndFactor(idx0, idx1, lerpFactor);
 
 				float2 uvOffset = DisplaceArray_TexelSize.xy * 0.5;
 				uvOffset = 0.0;
@@ -115,8 +122,9 @@ Shader "Custom/PrecomputedOceanShader"
 
 				{
 					//foam
-					col.xyz = tex2D(FoamTex, i.uv.xy * 4.0 + _Time.y * 0.1 ).xyz * mixValue.xyz;
+					col.xyz = tex2D(FoamTex, i.uv.xy * 4.0 + _Time.y * 0. ).xyz * mixValue.xyz;
 					//col.xyz = mixValue.xyz;
+					//col.xyz = normal.z / normal.y;
 				}
 
 				Unity_GlossyEnvironmentData envData;
@@ -127,7 +135,7 @@ Shader "Custom/PrecomputedOceanShader"
 				envData.reflUVW = refl;
 				float3 probe0 = Unity_GlossyEnvironment(UNITY_PASS_TEXCUBE(unity_SpecCube0), unity_SpecCube0_HDR, envData);
 
-				col.xyz += probe0 *0.5;
+				col.xyz += probe0 * 0.5;
 
                 UNITY_APPLY_FOG(i.fogCoord, col);
                 return col;

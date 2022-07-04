@@ -313,6 +313,7 @@ public class PrecomputedOcean : MonoBehaviour
 
         //lerp between frame
         LerpDataFunc(foamData, tempFoamData);
+        
         //LerpDataFunc(tempFoamData, foamData);
         //LerpDataFunc(foamData, tempFoamData);
         
@@ -405,8 +406,8 @@ public class PrecomputedOcean : MonoBehaviour
 
         for (int i = 0; i < mixTextures.Length; i++)
         {
-            if(needSave)
-                SaveToTga(mixTextures[i], "G://OutputData/mix_" + i + ".tga");
+            //if(needSave)
+                //SaveToTga(mixTextures[i], "G://OutputData/mix_" + i + ".tga");
         }
 
         mixArray = new Texture2DArray(mixTextures[0].width, mixTextures[0].height, mixTextures.Length, mixTextures[0].format, false);
@@ -496,7 +497,7 @@ public class PrecomputedOcean : MonoBehaviour
         UpdateOceanParameter(); 
 
         if(techType == TechType.Baked)
-            OutputData();
+            OutputData(true);
         
         //var array = AssetBundle.LoadFromFile("Assets/TextureArray.asset").LoadAsset<Texture2DArray>("Assets/TextureArray.asset");
         //var array = Resources.Load("Assets/TextureArray.asset") as Texture2DArray; 
