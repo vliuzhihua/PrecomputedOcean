@@ -17,7 +17,7 @@ public class PhillipsWaveSpectrum: ScriptableObject
     float[] dispersionTable;
 
     int meshSize = 32;
-    float worldScale = 32.0f;
+    float worldScale = 1.0f;
 
     public PhillipsWaveSpectrum()
     {
@@ -57,12 +57,16 @@ public class PhillipsWaveSpectrum: ScriptableObject
         }
     }
 
-    float Dispersion(int n_prime, int m_prime)
+    Vector2 GetWaveVector(int n, int m)
+    {
+        return new Vector2(Mathf.PI * (2 * n - meshSize) / meshSize * worldScale, Mathf.PI * (2 * m - meshSize) / meshSize * worldScale);
+    }
+
+    float Dispersion(int n, int m)
     {
         float w_0 = 2.0f * Mathf.PI / repeatTime;
-        float kx = Mathf.PI * (2 * n_prime - meshSize) / worldScale;
-        float kz = Mathf.PI * (2 * m_prime - meshSize) / worldScale;
-        return Mathf.Floor(Mathf.Sqrt(GRAVITY * Mathf.Sqrt(kx * kx + kz * kz)) / w_0) * w_0;
+        Vector2 k = GetWaveVector(n, m);
+        return Mathf.Floor(Mathf.Sqrt(GRAVITY * + k.magnitude) / w_0) * w_0;
     }
 
     Vector2 GaussianRandomVariable()
@@ -80,9 +84,9 @@ public class PhillipsWaveSpectrum: ScriptableObject
         return new Vector2(x1 * w, x2 * w);
     }
 
-    float PhillipsSpectrum(int n_prime, int m_prime)
+    float PhillipsSpectrum(int n, int m)
     {
-        Vector2 k = new Vector2(Mathf.PI * (2 * n_prime - meshSize) / worldScale, Mathf.PI * (2 * m_prime - meshSize) / worldScale);
+        Vector2 k = GetWaveVector(n, m);
         float k_length = k.magnitude;
         if (k_length < 0.000001f) return 0.0f;
 
@@ -105,10 +109,10 @@ public class PhillipsWaveSpectrum: ScriptableObject
         return waveAmp * Mathf.Exp(-1.0f / (k_length2 * L2)) / k_length4 * Mathf.Exp(-k_length2 * l2);
     }
 
-    Vector2 GetSpectrum(int n_prime, int m_prime)
+    Vector2 GetSpectrum(int n, int m)
     {
         Vector2 r = GaussianRandomVariable();
-        return r * Mathf.Sqrt(PhillipsSpectrum(n_prime, m_prime) / 2.0f);
+        return r * Mathf.Sqrt(PhillipsSpectrum(n, m) / 2.0f);
     }
 
 

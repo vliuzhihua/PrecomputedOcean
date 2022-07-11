@@ -33,7 +33,7 @@ public class PrecomputedOcean : MonoBehaviour
     public int meshSize = 32;
     public Material material;
 
-    public float worldScale = 64;
+    public float worldScale = 1;
     public int dataSize = 128;
 
     public TechType techType = TechType.BruteForce;
@@ -104,12 +104,12 @@ public class PrecomputedOcean : MonoBehaviour
         //fpi
         for(int i = 0; i < 6; i++)
         {
-            Vector2 uv = result / worldScale;
+            Vector2 uv = result / worldScale / meshSize;
             Vector3 disp = BilinearWrapSample(frameId, displaceData, uv, meshSize);
             result = worldPos - new Vector2(disp.x, disp.z);
         } 
 
-        return result / worldScale;
+        return result / worldScale / meshSize;
     }
 
     Vector2 GetUVWithWrap(Vector2 uv, int meshSize)
@@ -178,8 +178,8 @@ public class PrecomputedOcean : MonoBehaviour
             {
                 for (int j = 0; j < meshSize; j++)
                 {
-                    float x = j * worldScale / meshSize;
-                    float y = i * worldScale / meshSize;
+                    float x = j * worldScale;
+                    float y = i * worldScale;
                     Vector2 worldPos = new Vector2(x, y);
                     Vector2 uv = GetCorrectUV(frameId, displaceData, worldPos, worldScale, meshSize);
 
@@ -401,7 +401,7 @@ public class PrecomputedOcean : MonoBehaviour
         //foam array
         Vector3[,] mixData = new Vector3[dataSize, meshSize * meshSize];
         Texture2D[] mixTextures = new Texture2D[dataSize];
-        CalcFoamData(worldScale / meshSize, displaceData, out mixData);
+        CalcFoamData(worldScale, displaceData, out mixData);
         DataToTexture(meshSize, mixData, mixTextures);
 
         for (int i = 0; i < mixTextures.Length; i++)
@@ -442,7 +442,7 @@ public class PrecomputedOcean : MonoBehaviour
             for (int j = 0; j < meshSizePlus1; j++)
             {
                 int idx = i * meshSizePlus1 + j;
-                originPosition[idx] = new Vector3(worldScale / meshSize * j, 0.0f, worldScale / meshSize * i);
+                originPosition[idx] = new Vector3(worldScale * j, 0.0f, worldScale * i);
                 uv[idx] = new Vector2(1.0f / meshSize * j, 1.0f / meshSize * i);
                 normals[idx] = new Vector3(0.0f, 1.0f, 0.0f);
             }
@@ -479,7 +479,7 @@ public class PrecomputedOcean : MonoBehaviour
                     gameObject.GetComponent<MeshFilter>().mesh = mesh;
                     gameObject.GetComponent<MeshRenderer>().material = material;
 
-                    gameObject.transform.position = new Vector3((j - meshCount / 2) * worldScale, 0.0f, (i - meshCount / 2) * worldScale);
+                    gameObject.transform.position = new Vector3((j - meshCount / 2) * worldScale * meshSize, 0.0f, (i - meshCount / 2) * worldScale * meshSize);
 
                 }
             }
@@ -604,11 +604,11 @@ public class PrecomputedOcean : MonoBehaviour
 
         for (int m_prime = 0; m_prime < N; m_prime++)
         {
-            kz = Mathf.PI * (2.0f * m_prime - N) / worldScale;
+            kz = Mathf.PI * (2.0f * m_prime - N) / (worldScale * N);
 
             for (int n_prime = 0; n_prime < N; n_prime++)
             {
-                kx = Mathf.PI * (2 * n_prime - N) / worldScale;
+                kx = Mathf.PI * (2 * n_prime - N) / (worldScale * N);
                 len = Mathf.Sqrt(kx * kx + kz * kz);
                 index = m_prime * N + n_prime;
 
