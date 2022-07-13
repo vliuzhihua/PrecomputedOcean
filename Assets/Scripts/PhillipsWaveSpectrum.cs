@@ -57,7 +57,7 @@ public class PhillipsWaveSpectrum: ScriptableObject
         }
     }
 
-    Vector2 GetWaveVector(int n, int m)
+    public Vector2 GetWaveVector(int n, int m)
     {
         return new Vector2(Mathf.PI * (2 * n - meshSize) / meshSize * worldScale, Mathf.PI * (2 * m - meshSize) / meshSize * worldScale);
     }
@@ -66,7 +66,7 @@ public class PhillipsWaveSpectrum: ScriptableObject
     {
         float w_0 = 2.0f * Mathf.PI / repeatTime;
         Vector2 k = GetWaveVector(n, m);
-        return Mathf.Floor(Mathf.Sqrt(GRAVITY * + k.magnitude) / w_0) * w_0;
+        return Mathf.Floor(Mathf.Sqrt(GRAVITY * k.magnitude) / w_0) * w_0;
     }
 
     Vector2 GaussianRandomVariable()

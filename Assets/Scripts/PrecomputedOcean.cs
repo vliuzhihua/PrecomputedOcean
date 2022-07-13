@@ -602,17 +602,18 @@ public class PrecomputedOcean : MonoBehaviour
         Vector4[] inputSlopeBuffer = new Vector4[slopeBuffer.Length];
         Vector4[] inputDisplacementBuffer = new Vector4[displacementBuffer.Length];
 
-        for (int m_prime = 0; m_prime < N; m_prime++)
+        for (int m = 0; m < N; m++)
         {
-            kz = Mathf.PI * (2.0f * m_prime - N) / (worldScale * N);
-
-            for (int n_prime = 0; n_prime < N; n_prime++)
+            for (int n = 0; n < N; n++)
             {
-                kx = Mathf.PI * (2 * n_prime - N) / (worldScale * N);
-                len = Mathf.Sqrt(kx * kx + kz * kz);
-                index = m_prime * N + n_prime;
+                Vector2 k = spectrum.GetWaveVector(n, m);
+                kx = k.x;
+                kz = k.y;
+                len = k.magnitude;
 
-                Vector2 c = spectrum.GetWaveFactor(t, n_prime, m_prime);
+                index = m * N + n;
+
+                Vector2 c = spectrum.GetWaveFactor(t, n, m);
 
                 inputHeightBuffer[index].x = c.x;
                 inputHeightBuffer[index].y = c.y;
@@ -644,7 +645,7 @@ public class PrecomputedOcean : MonoBehaviour
         solver.Peform(inputSlopeBuffer, ref slopeBuffer);
         solver.Peform(inputDisplacementBuffer, ref displacementBuffer);
 
-        Vector3 n;
+        Vector3 norm;
 
         for (int m_prime = 0; m_prime < N; m_prime++)
         {
@@ -663,12 +664,12 @@ public class PrecomputedOcean : MonoBehaviour
                 vertices[index1].z = originPosition[index1].z + displacementBuffer[index].z * lambda;
 
                 // normal
-                n = new Vector3(-slopeBuffer[index].x, 1.0f, -slopeBuffer[index].z);
-                n.Normalize();
+                norm = new Vector3(-slopeBuffer[index].x, 1.0f, -slopeBuffer[index].z);
+                norm.Normalize();
 
-                normals[index1].x = n.x;
-                normals[index1].y = n.y;
-                normals[index1].z = n.z;
+                normals[index1].x = norm.x;
+                normals[index1].y = norm.y;
+                normals[index1].z = norm.z;
 
                 // for tiling
                 if (n_prime == 0 && m_prime == 0)
@@ -678,9 +679,9 @@ public class PrecomputedOcean : MonoBehaviour
                     vertices[index1 + N + Nplus1 * N].x = originPosition[index1 + N + Nplus1 * N].x + displacementBuffer[index].x * lambda;
                     vertices[index1 + N + Nplus1 * N].z = originPosition[index1 + N + Nplus1 * N].z + displacementBuffer[index].z * lambda;
 
-                    normals[index1 + N + Nplus1 * N].x = n.x;
-                    normals[index1 + N + Nplus1 * N].y = n.y;
-                    normals[index1 + N + Nplus1 * N].z = n.z;
+                    normals[index1 + N + Nplus1 * N].x = norm.x;
+                    normals[index1 + N + Nplus1 * N].y = norm.y;
+                    normals[index1 + N + Nplus1 * N].z = norm.z;
                 }
                 if (n_prime == 0)
                 {
@@ -689,9 +690,9 @@ public class PrecomputedOcean : MonoBehaviour
                     vertices[index1 + N].x = originPosition[index1 + N].x + displacementBuffer[index].x * lambda;
                     vertices[index1 + N].z = originPosition[index1 + N].z + displacementBuffer[index].z * lambda;
 
-                    normals[index1 + N].x = n.x;
-                    normals[index1 + N].y = n.y;
-                    normals[index1 + N].z = n.z;
+                    normals[index1 + N].x = norm.x;
+                    normals[index1 + N].y = norm.y;
+                    normals[index1 + N].z = norm.z;
                 }
                 if (m_prime == 0)
                 {
@@ -700,9 +701,9 @@ public class PrecomputedOcean : MonoBehaviour
                     vertices[index1 + Nplus1 * N].x = originPosition[index1 + Nplus1 * N].x + displacementBuffer[index].x * lambda;
                     vertices[index1 + Nplus1 * N].z = originPosition[index1 + Nplus1 * N].z + displacementBuffer[index].z * lambda;
 
-                    normals[index1 + Nplus1 * N].x = n.x;
-                    normals[index1 + Nplus1 * N].y = n.y;
-                    normals[index1 + Nplus1 * N].z = n.z;
+                    normals[index1 + Nplus1 * N].x = norm.x;
+                    normals[index1 + Nplus1 * N].y = norm.y;
+                    normals[index1 + Nplus1 * N].z = norm.z;
                 }
             }
         }
