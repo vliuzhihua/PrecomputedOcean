@@ -152,11 +152,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7daba9cb7d7b34e4ba8ae59124d85fe1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  meshSize: 256
+  meshSize: 128
   material: {fileID: 2100000, guid: b12bd06ff691cf742befac633580924d, type: 2}
   worldScale: 2
-  dataSize: 32
-  techType: 1
+  dataSize: 128
+  techType: 2
   spectrum: {fileID: 11400000, guid: 54e1fe2d7dde8a848ad784d4fccaf6bd, type: 2}
   multiMesh: 0
   onlyYDisplace: 0

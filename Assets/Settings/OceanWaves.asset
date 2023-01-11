@@ -14,4 +14,4 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   windSpeed: {x: 8, y: 8}
   waveAmp: 0.0002
-  repeatTime: 200
+  repeatTime: 20

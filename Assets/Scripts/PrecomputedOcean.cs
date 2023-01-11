@@ -420,7 +420,7 @@ public class PrecomputedOcean : MonoBehaviour
         material.SetTexture("MixArray", mixArray);
 
         if(needSave)
-            SaveAllDataToFile("G://result/PrecomputedOceanData.data", meshSize, displaceData, normalData, mixData);
+            SaveAllDataToFile(".//Result/PrecomputedOceanData.data", meshSize, displaceData, normalData, mixData);
 
     }
 
